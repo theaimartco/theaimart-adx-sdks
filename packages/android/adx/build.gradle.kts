@@ -42,7 +42,7 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     // org.json is provided by the Android platform at runtime; for local JVM unit tests we need
     // a real implementation on the classpath.
-    testImplementation("org.json:json:20240303")
+    testImplementation("org.json:json:20260814")
 }
 
 afterEvaluate {
