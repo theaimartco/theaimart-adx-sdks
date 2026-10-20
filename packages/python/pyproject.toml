@@ -42,7 +42,7 @@ Contract = "https://github.com/theaimartco/theaimart-adx-sdks/blob/main/CONTRACT
 [project.optional-dependencies]
 # UI-framework adapters (theaimart_adx.integrations.*). The core SDK stays dependency-free;
 # install only the surface you actually ship.
-flet = ["flet>=0.21"]
+flet = ["flet>=1.0.4"]
 kivy = ["kivy>=2.1"]
 streamlit = ["streamlit>=1.30"]
 dev = ["pytest>=7", "mypy>=1.0", "ruff>=0.1"]
