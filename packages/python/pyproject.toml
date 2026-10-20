@@ -1,0 +1,76 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "theaimart-adx"
+version = "1.1.0"
+description = "Official theaimart Ad Network SDK for Python — ad serving, tracking and rendering, with Flet, Kivy and Streamlit banner widgets."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "Apache-2.0" }
+authors = [{ name = "theaimart" }]
+keywords = [
+    "ads", "advertising", "adtech", "adx", "theaimart", "monetization", "sdk", "openrtb",
+    "flet", "kivy", "streamlit", "kivmob",
+]
+dependencies = []
+
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://adx.theaimart.co"
+Documentation = "https://github.com/theaimartco/theaimart-adx-sdks/"
+Source = "https://github.com/theaimartco/theaimart-adx-sdks"
+Contract = "https://github.com/theaimartco/theaimart-adx-sdks/blob/main/CONTRACT.md"
+
+[project.optional-dependencies]
+# UI-framework adapters (theaimart_adx.integrations.*). The core SDK stays dependency-free;
+# install only the surface you actually ship.
+flet = ["flet>=0.21"]
+kivy = ["kivy>=2.1"]
+streamlit = ["streamlit>=1.30"]
+dev = ["pytest>=7", "mypy>=1.0", "ruff>=0.1"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+theaimart_adx = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.mypy]
+# mypy only type-checks as 3.10+ now; 3.8 syntax compatibility is ruff's job (target-version).
+python_version = "3.10"
+strict = true
+files = ["src/theaimart_adx"]
+
+# The UI frameworks are optional extras and ship no type stubs.
+[[tool.mypy.overrides]]
+module = ["flet", "flet.*", "kivy", "kivy.*", "streamlit", "streamlit.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["theaimart_adx.integrations.kivy"]
+disallow_subclassing_any = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"

@@ -1,0 +1,198 @@
+name: Release
+
+# One tag per registry, so each SDK ships on its own schedule:
+#
+#   python-v1.1.0        → PyPI       theaimart-adx                (Trusted Publishing, OIDC)
+#   node-v1.1.0          → npm        @theaimart/adx               (Trusted Publishing, OIDC + provenance)
+#   web-v1.1.0           → npm        @theaimart/adx-web           (Trusted Publishing, OIDC + provenance)
+#   react-native-v1.1.0  → npm        @theaimart/adx-react-native  (Trusted Publishing, OIDC + provenance)
+#   rust-v1.1.0          → crates.io  theaimart-adx                (Trusted Publishing, OIDC)
+#   flutter-v1.1.0       → pub.dev    theaimart_adx                (automated publishing, OIDC)
+#   v1.1.0               → SwiftPM + Unity UPM resolve the tag itself; CocoaPods trunk push
+#
+# Every job refuses to publish unless the tag's version is the version the package reports on
+# the wire (scripts/check-versions.mjs), and runs the package's tests first.
+#
+# One-time registry setup (outside this file): register this repository + workflow `release.yml`
+# as a trusted publisher on PyPI, npm (each package), crates.io and pub.dev (tag pattern
+# `flutter-v{{version}}`), each behind a GitHub environment of the same name; and add the
+# COCOAPODS_TRUNK_TOKEN secret to the `cocoapods` environment.
+
+on:
+  push:
+    tags:
+      - "python-v*"
+      - "node-v*"
+      - "web-v*"
+      - "react-native-v*"
+      - "rust-v*"
+      - "flutter-v*"
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: Resolve tag
+    runs-on: ubuntu-latest
+    outputs:
+      package: ${{ steps.tag.outputs.package }}
+      version: ${{ steps.tag.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - id: tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          case "$TAG" in
+            python-v*)       pkg=python ;;
+            node-v*)         pkg=node ;;
+            web-v*)          pkg=web ;;
+            react-native-v*) pkg=react-native ;;
+            rust-v*)         pkg=rust ;;
+            flutter-v*)      pkg=flutter ;;
+            v*)              pkg=ios ;;
+            *) echo "unrecognised tag $TAG"; exit 1 ;;
+          esac
+          version="${TAG##*v}"
+          node scripts/check-versions.mjs
+          # The tagged version must be exactly what the package reports on the wire.
+          node scripts/check-versions.mjs | grep -Eq "^✓ ${pkg} +${version//./\\.}\$" \
+            || { echo "tag $TAG does not match the ${pkg} package version"; exit 1; }
+          if [ "$pkg" = ios ]; then
+            node scripts/check-versions.mjs | grep -Eq "^✓ unity +${version//./\\.}\$" \
+              || { echo "tag $TAG does not match the unity package version"; exit 1; }
+          fi
+          echo "package=$pkg" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  python:
+    needs: plan
+    if: needs.plan.outputs.package == 'python'
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.x"
+      - run: python -m pip install --upgrade build twine mypy
+      - run: PYTHONPATH=src python -m unittest discover -s tests
+        working-directory: packages/python
+      - run: python -m mypy
+        working-directory: packages/python
+      - run: python -m build && python -m twine check dist/*
+        working-directory: packages/python
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        with:
+          packages-dir: packages/python/dist/
+
+  npm:
+    needs: plan
+    if: contains(fromJSON('["node","web","react-native"]'), needs.plan.outputs.package)
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: packages/${{ needs.plan.outputs.package }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+      # Trusted Publishing needs npm >= 11.5.1; Node 22 bundles npm 10.
+      - run: npm install -g npm@11
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npx tsc -p tsconfig.json --noEmit
+      - run: node --test test/*.test.ts
+      - run: npm audit --omit=dev --audit-level=low
+      - if: needs.plan.outputs.package == 'web'
+        run: npm rebuild esbuild
+      # prepublishOnly builds dist/ (and the CDN bundle for web); provenance links the tarball
+      # to this workflow run.
+      - run: npm publish --provenance --access public
+
+  rust:
+    needs: plan
+    if: needs.plan.outputs.package == 'rust'
+    runs-on: ubuntu-latest
+    environment: crates-io
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: packages/rust
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          components: clippy
+      - run: cargo test --all-features
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo install cargo-audit --locked && cargo audit
+      - uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1
+        id: auth
+      - run: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
+  flutter-test:
+    needs: plan
+    if: needs.plan.outputs.package == 'flutter'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/flutter
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: stable
+      - run: flutter pub get && flutter analyze && flutter test
+      - run: dart pub publish --dry-run
+
+  flutter:
+    needs: [plan, flutter-test]
+    if: needs.plan.outputs.package == 'flutter'
+    permissions:
+      id-token: write
+    # pub.dev's own reusable workflow: it is what pub.dev's automated publishing trusts.
+    uses: dart-lang/setup-dart/.github/workflows/publish.yml@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
+    with:
+      environment: pub.dev
+      working-directory: packages/flutter
+
+  cocoapods:
+    needs: plan
+    if: needs.plan.outputs.package == 'ios'
+    runs-on: macos-latest
+    environment: cocoapods
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - run: swift test
+        working-directory: packages/ios
+      - run: swift package describe
+      - run: pod trunk push TheaimartAdx.podspec --allow-warnings
+        env:
+          COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}

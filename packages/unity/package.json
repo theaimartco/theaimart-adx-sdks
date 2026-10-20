@@ -1,0 +1,26 @@
+{
+  "name": "co.theaimart.adx",
+  "version": "1.1.0",
+  "displayName": "theaimart adx",
+  "description": "Official theaimart Ad Network SDK for Unity — request ad decisions, render banners, and fire viewability beacons. Zero third-party dependencies.",
+  "unity": "2020.3",
+  "documentationUrl": "https://adx.theaimart.co",
+  "changelogUrl": "https://github.com/theaimartco/theaimart-adx-sdks/blob/main/packages/unity/CHANGELOG.md",
+  "licensesUrl": "https://github.com/theaimartco/theaimart-adx-sdks/blob/main/LICENSE",
+  "keywords": [
+    "ads",
+    "advertising",
+    "adtech",
+    "adx",
+    "theaimart",
+    "monetization"
+  ],
+  "author": {
+    "name": "theaimart",
+    "url": "https://adx.theaimart.co"
+  },
+  "license": "Apache-2.0",
+  "dependencies": {
+    "com.unity.ugui": "1.0.0"
+  }
+}

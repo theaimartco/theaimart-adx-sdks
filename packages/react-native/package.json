@@ -1,0 +1,61 @@
+{
+  "name": "@theaimart/adx-react-native",
+  "version": "1.1.0",
+  "description": "Official theaimart Ad Network SDK for React Native — <BannerAd> component + client.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "react-native": "./dist/index.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test test/*.test.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "ads",
+    "advertising",
+    "adtech",
+    "adx",
+    "theaimart",
+    "react-native",
+    "monetization",
+    "sdk"
+  ],
+  "license": "Apache-2.0",
+  "author": "theaimart",
+  "homepage": "https://adx.theaimart.co",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/theaimartco/theaimart-adx-sdks.git",
+    "directory": "packages/react-native"
+  },
+  "peerDependencies": {
+    "react": ">=17.0.0",
+    "react-native": ">=0.68.0"
+  },
+  "peerDependenciesMeta": {
+    "react-native-webview": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.3.0",
+    "react": "^19.3.1",
+    "react-native": "^0.88.0",
+    "typescript": "^5.7.0"
+  }
+}

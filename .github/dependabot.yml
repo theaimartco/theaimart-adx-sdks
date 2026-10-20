@@ -1,0 +1,24 @@
+# Keeps the commit-pinned actions and the dev toolchains current. The SDKs themselves ship with
+# no runtime dependencies except Rust (ureq) and Flutter (http), which are covered here too.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+  - package-ecosystem: npm
+    directories: [/packages/node, /packages/web, /packages/react-native]
+    schedule: { interval: weekly }
+    groups:
+      dev-toolchain: { dependency-type: development }
+  - package-ecosystem: cargo
+    directory: /packages/rust
+    schedule: { interval: weekly }
+  - package-ecosystem: pub
+    directory: /packages/flutter
+    schedule: { interval: weekly }
+  - package-ecosystem: pip
+    directory: /packages/python
+    schedule: { interval: weekly }
+  - package-ecosystem: gradle
+    directory: /packages/android
+    schedule: { interval: weekly }

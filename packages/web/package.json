@@ -1,0 +1,56 @@
+{
+  "name": "@theaimart/adx-web",
+  "version": "1.1.0",
+  "description": "Official theaimart Ad Network SDK for the browser — auto-rendering banners + a framework-agnostic client.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "unpkg": "./dist/taimads.global.js",
+  "jsdelivr": "./dist/taimads.global.js",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "build:cdn": "esbuild src/global.ts --bundle --format=iife --minify --outfile=dist/taimads.global.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test test/*.test.ts",
+    "prepublishOnly": "npm run build && npm run build:cdn"
+  },
+  "keywords": [
+    "ads",
+    "advertising",
+    "adtech",
+    "adx",
+    "theaimart",
+    "monetization",
+    "sdk",
+    "browser",
+    "banner"
+  ],
+  "license": "Apache-2.0",
+  "author": "theaimart",
+  "homepage": "https://adx.theaimart.co",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/theaimartco/theaimart-adx-sdks.git",
+    "directory": "packages/web"
+  },
+  "bugs": {
+    "url": "https://github.com/theaimartco/theaimart-adx-sdks/issues"
+  },
+  "sideEffects": false,
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.25.12",
+    "typescript": "^5.7.0"
+  }
+}

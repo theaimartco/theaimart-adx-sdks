@@ -1,0 +1,12 @@
+# What `dart pub publish` must never upload. pub honours .gitignore only inside a git checkout,
+# and this file replaces it when present — so it has to stand on its own.
+build/
+.dart_tool/
+.packages
+pubspec.lock
+.flutter-plugins
+.flutter-plugins-dependencies
+*.iml
+.idea/
+.vscode/
+.DS_Store

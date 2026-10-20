@@ -1,0 +1,181 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # Weekly, so a new advisory in a dependency fails the build even when nothing was pushed.
+    - cron: "17 4 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+# Third-party actions are pinned to a commit, not a tag: a tag can be moved to new code, a
+# commit cannot. The comment names the tag the commit was resolved from.
+
+jobs:
+  versions:
+    name: Version consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      # Every SDK's wire version (User-Agent / X-Adx-Sdk) must match its registry manifest.
+      - run: node scripts/check-versions.mjs
+
+  python:
+    name: Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.13"]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: ${{ matrix.python }}
+      # Install the UI extras so the Flet / Kivy / Streamlit adapter tests actually run
+      # instead of skipping.
+      - run: pip install "flet>=0.21" "streamlit>=1.30" "kivy>=2.1" mypy ruff build twine
+        working-directory: packages/python
+      - env:
+          KIVY_NO_ARGS: "1"
+          KIVY_NO_CONSOLELOG: "1"
+        run: PYTHONPATH=src python -m unittest discover -s tests -v
+        working-directory: packages/python
+      - name: Type-check (strict)
+        run: python -m mypy
+        working-directory: packages/python
+      - name: Lint (errors only; 3.8 syntax)
+        run: ruff check --isolated --select E9,F,B --target-version py38 src tests
+        working-directory: packages/python
+      - name: Build and check distributions
+        run: python -m build && python -m twine check dist/*
+        working-directory: packages/python
+
+  node-typescript:
+    name: ${{ matrix.package }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [node, web, react-native]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+      # The lockfile, exactly — and no install scripts from the dev toolchain.
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: packages/${{ matrix.package }}
+      - name: Typecheck
+        run: npx tsc -p tsconfig.json --noEmit
+        working-directory: packages/${{ matrix.package }}
+      - name: Test
+        run: node --test test/*.test.ts
+        working-directory: packages/${{ matrix.package }}
+      - name: Build and pack
+        run: npm run build && npm pack --dry-run
+        working-directory: packages/${{ matrix.package }}
+      - name: Build the CDN bundle
+        if: matrix.package == 'web'
+        run: npm rebuild esbuild && npm run build:cdn
+        working-directory: packages/web
+      # What integrators install has no dependencies today; this keeps it honest if one is added.
+      - name: Audit runtime dependencies
+        run: npm audit --omit=dev --audit-level=low
+        working-directory: packages/${{ matrix.package }}
+
+  rust:
+    name: Rust
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          components: clippy
+      - run: cargo test --all-features
+        working-directory: packages/rust
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+        working-directory: packages/rust
+      - run: cargo clippy --all-targets --no-default-features -- -D warnings
+        working-directory: packages/rust
+      # Cargo.lock is not committed for a library, so this audits what a downstream user resolves today.
+      - name: Audit dependencies
+        run: cargo install cargo-audit --locked && cargo audit
+        working-directory: packages/rust
+      - run: cargo package
+        working-directory: packages/rust
+
+  flutter:
+    name: Flutter
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: stable
+      - run: flutter pub get
+        working-directory: packages/flutter
+      - run: flutter analyze
+        working-directory: packages/flutter
+      - run: flutter test
+        working-directory: packages/flutter
+      - run: dart pub publish --dry-run
+        working-directory: packages/flutter
+
+  android:
+    name: Android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+      - run: gradle :adx:testDebugUnitTest :adx:assembleRelease --console=plain
+        working-directory: packages/android
+
+  ios:
+    name: iOS / Swift
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      # Builds the whole target (including BannerAdView) for a real iOS SDK, then runs the
+      # platform-independent unit tests on the host toolchain.
+      - name: Build for iOS
+        run: xcodebuild -scheme TheaimartAdx -destination 'generic/platform=iOS' build
+        working-directory: packages/ios
+      - name: Test
+        run: swift test
+        working-directory: packages/ios
+      # The manifest integrators actually resolve (SwiftPM only reads the repository root).
+      - name: Root Package.swift resolves and builds
+        run: swift package describe && xcodebuild -scheme TheaimartAdx -destination 'generic/platform=iOS' build
+      - name: CocoaPods spec lints
+        run: pod lib lint TheaimartAdx.podspec --allow-warnings
+
+  # Unity is not covered here: unity-builder needs a licensed Unity install, which this
+  # repository has no credentials for. `packages/unity/Tests/Editor` runs in the Unity Test
+  # Runner (Window ▸ General ▸ Test Runner ▸ EditMode).

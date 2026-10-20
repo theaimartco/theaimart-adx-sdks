@@ -1,0 +1,83 @@
+# ---- OS / editor ----
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
+*.iml
+
+# ---- Node / TypeScript (web, node, react-native) ----
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+.npm/
+npm-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+*.tgz
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.venv/
+venv/
+build/
+dist/
+
+# ---- Android / Kotlin (Gradle) ----
+.gradle/
+local.properties
+captures/
+*.apk
+*.aar
+*.ap_
+*.dex
+.cxx/
+
+# ---- iOS / Swift ----
+.build/
+DerivedData/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+Pods/
+*.ipa
+
+# ---- Flutter / Dart ----
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+pubspec.lock
+
+# ---- Rust ----
+target/
+Cargo.lock
+
+# ---- Unity / C# ----
+Library/
+Temp/
+Obj/
+bin/
+Logs/
+*.csproj
+*.sln
+*.userprefs
+
+# ---- Secrets (never commit) ----
+.env
+.env.*
+!.env.example
+*.pem
+*.keystore
+*.jks
+secrets.properties

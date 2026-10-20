@@ -1,0 +1,55 @@
+{
+  "name": "@theaimart/adx",
+  "version": "1.1.0",
+  "description": "Official theaimart Ad Network SDK for Node.js — server-side ad serving, tracking, and rendering.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test test/*.test.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "ads",
+    "advertising",
+    "adtech",
+    "adx",
+    "theaimart",
+    "monetization",
+    "sdk",
+    "openrtb",
+    "server-side"
+  ],
+  "license": "Apache-2.0",
+  "author": "theaimart",
+  "homepage": "https://adx.theaimart.co",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/theaimartco/theaimart-adx-sdks.git",
+    "directory": "packages/node"
+  },
+  "bugs": {
+    "url": "https://github.com/theaimartco/theaimart-adx-sdks/issues"
+  },
+  "sideEffects": false,
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
+}

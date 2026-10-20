@@ -1,0 +1,30 @@
+[package]
+name = "theaimart-adx"
+version = "1.1.0"
+edition = "2021"
+rust-version = "1.71"
+description = "Official theaimart Ad Network SDK for Rust — server-side ad serving, tracking, and rendering."
+license = "Apache-2.0"
+repository = "https://github.com/theaimartco/theaimart-adx-sdks"
+homepage = "https://adx.theaimart.co"
+documentation = "https://adx.theaimart.co/docs"
+readme = "README.md"
+keywords = ["ads", "advertising", "adtech", "adx", "sdk"]
+categories = ["api-bindings", "web-programming"]
+
+[features]
+default = ["ureq"]
+# The default blocking HTTP transport (UreqTransport). Disable to bring your own transport.
+ureq = ["dep:ureq", "dep:rustls"]
+
+[dependencies]
+serde_json = "1"
+ureq = { version = "2.12", optional = true, default-features = true }
+# Not used directly: a security floor on ureq's TLS stack. rustls < 0.23.46 has RUSTSEC-2026-0285,
+# -0346, -0348 and -0349 (handshake downgrade, cross-epoch handshake messages, pre-auth 1 GiB
+# allocation, secrets in Debug output). Declaring the floor here makes every downstream lockfile
+# resolve a fixed rustls, not just ours. Features are left to ureq.
+rustls = { version = "0.23.46", optional = true, default-features = false }
+
+[package.metadata.docs.rs]
+all-features = true
