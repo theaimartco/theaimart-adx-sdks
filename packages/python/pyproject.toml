@@ -44,7 +44,7 @@ Contract = "https://github.com/theaimartco/theaimart-adx-sdks/blob/main/CONTRACT
 # install only the surface you actually ship.
 flet = ["flet>=0.21"]
 kivy = ["kivy>=2.1"]
-streamlit = ["streamlit>=1.30"]
+streamlit = ["streamlit>=1.65.0"]
 dev = ["pytest>=7", "mypy>=1.0", "ruff>=0.1"]
 
 [tool.setuptools.packages.find]
