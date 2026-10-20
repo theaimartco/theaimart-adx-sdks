@@ -45,7 +45,7 @@ Contract = "https://github.com/theaimartco/theaimart-adx-sdks/blob/main/CONTRACT
 flet = ["flet>=0.21"]
 kivy = ["kivy>=2.1"]
 streamlit = ["streamlit>=1.30"]
-dev = ["pytest>=7", "mypy>=1.0", "ruff>=0.1"]
+dev = ["pytest>=9.1.1", "mypy>=1.0", "ruff>=0.1"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
