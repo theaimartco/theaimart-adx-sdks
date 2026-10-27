@@ -19,7 +19,7 @@ ureq = ["dep:ureq", "dep:rustls"]
 
 [dependencies]
 serde_json = "1"
-ureq = { version = "2.12", optional = true, default-features = true }
+ureq = { version = "3.5", optional = true, default-features = true }
 # Not used directly: a security floor on ureq's TLS stack. rustls < 0.23.46 has RUSTSEC-2026-0285,
 # -0346, -0348 and -0349 (handshake downgrade, cross-epoch handshake messages, pre-auth 1 GiB
 # allocation, secrets in Debug output). Declaring the floor here makes every downstream lockfile
