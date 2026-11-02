@@ -63,11 +63,28 @@ afterEvaluate {
                             url.set("https://www.apache.org/licenses/LICENSE-2.0.txt")
                         }
                     }
+                    // Maven Central rejects a POM without a developer entry.
+                    developers {
+                        developer {
+                            id.set("theaimart")
+                            name.set("theaimart")
+                            email.set("contact@theaimart.co")
+                            url.set("https://theaimart.co")
+                        }
+                    }
                     scm {
                         url.set("https://github.com/theaimartco/theaimart-adx-sdks")
                         connection.set("scm:git:https://github.com/theaimartco/theaimart-adx-sdks.git")
                     }
                 }
+            }
+        }
+        // A plain directory, not a server: the release workflow signs what lands here and
+        // uploads it to Maven Central (scripts/publish-maven-central.sh).
+        repositories {
+            maven {
+                name = "staging"
+                url = uri(layout.buildDirectory.dir("staging"))
             }
         }
     }

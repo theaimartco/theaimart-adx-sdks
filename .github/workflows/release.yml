@@ -8,15 +8,24 @@ name: Release
 #   react-native-v1.1.0  → npm        @theaimart/adx-react-native  (Trusted Publishing, OIDC + provenance)
 #   rust-v1.1.0          → crates.io  theaimart-adx                (Trusted Publishing, OIDC)
 #   flutter-v1.1.0       → pub.dev    theaimart_adx                (automated publishing, OIDC)
+#   android-v1.1.0       → Maven Central co.theaimart:adx-android  (Central Portal upload, GPG-signed)
 #   v1.1.0               → SwiftPM + Unity UPM resolve the tag itself; CocoaPods trunk push
+#
+# Nobody has to push these tags by hand: `auto-release.yml` creates them when a package's
+# version changes on main and starts this workflow for each one. Pushing a tag yourself still
+# works exactly as before.
 #
 # Every job refuses to publish unless the tag's version is the version the package reports on
 # the wire (scripts/check-versions.mjs), and runs the package's tests first.
 #
-# One-time registry setup (outside this file): register this repository + workflow `release.yml`
-# as a trusted publisher on PyPI, npm (each package), crates.io and pub.dev (tag pattern
-# `flutter-v{{version}}`), each behind a GitHub environment of the same name; and add the
-# COCOAPODS_TRUNK_TOKEN secret to the `cocoapods` environment.
+# One-time registry setup (outside this file) — RELEASING.md walks through each one:
+# register this repository + workflow `release.yml` as a trusted publisher on PyPI, npm (each
+# package), crates.io and pub.dev (tag pattern `flutter-v{{version}}`, with publishing from
+# workflow_dispatch allowed), each behind a GitHub environment of the same name. npm cannot
+# trust a package that does not exist yet, so the first publish of a new npm package uses the
+# NPM_TOKEN secret. Maven Central needs MAVEN_CENTRAL_USERNAME / MAVEN_CENTRAL_PASSWORD /
+# MAVEN_GPG_PRIVATE_KEY / MAVEN_GPG_PASSPHRASE in the `maven-central` environment, and
+# CocoaPods needs COCOAPODS_TRUNK_TOKEN in the `cocoapods` environment.
 
 on:
   push:
@@ -27,7 +36,12 @@ on:
       - "react-native-v*"
       - "rust-v*"
       - "flutter-v*"
+      - "android-v*"
       - "v*"
+  # How auto-release.yml starts a release: a tag pushed with the workflow's own token cannot
+  # trigger another workflow, so it dispatches this one on the tag instead. Run it from the
+  # Actions tab with "Use workflow from" set to a tag to re-run a failed release.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -47,6 +61,10 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
         run: |
+          if [ "${{ github.ref_type }}" != "tag" ]; then
+            echo "::error::run this workflow on a release tag (e.g. web-v1.1.0), not on a branch"
+            exit 1
+          fi
           case "$TAG" in
             python-v*)       pkg=python ;;
             node-v*)         pkg=node ;;
@@ -54,6 +72,7 @@ jobs:
             react-native-v*) pkg=react-native ;;
             rust-v*)         pkg=rust ;;
             flutter-v*)      pkg=flutter ;;
+            android-v*)      pkg=android ;;
             v*)              pkg=ios ;;
             *) echo "unrecognised tag $TAG"; exit 1 ;;
           esac
@@ -123,8 +142,11 @@ jobs:
       - if: needs.plan.outputs.package == 'web'
         run: npm rebuild esbuild
       # prepublishOnly builds dist/ (and the CDN bundle for web); provenance links the tarball
-      # to this workflow run.
+      # to this workflow run. Trusted Publishing (OIDC) is used when npm trusts this repo;
+      # NPM_TOKEN covers a package's very first publish, before npm can trust anything.
       - run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   rust:
     needs: plan
@@ -193,6 +215,43 @@ jobs:
       - run: swift test
         working-directory: packages/ios
       - run: swift package describe
-      - run: pod trunk push TheaimartAdx.podspec --allow-warnings
+      # SwiftPM and Unity install straight from the git tag, so the release has already
+      # happened for them by the time this runs. Without the trunk token, skip CocoaPods with
+      # a notice instead of turning a successful release red.
+      - name: Push to CocoaPods trunk
         env:
           COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
+        run: |
+          if [ -z "$COCOAPODS_TRUNK_TOKEN" ]; then
+            echo "::notice::COCOAPODS_TRUNK_TOKEN is not set — skipped CocoaPods. SwiftPM and Unity install from this tag already."
+            exit 0
+          fi
+          pod trunk push TheaimartAdx.podspec --allow-warnings
+
+  android:
+    needs: plan
+    if: needs.plan.outputs.package == 'android'
+    runs-on: ubuntu-latest
+    environment: maven-central
+    defaults:
+      run:
+        working-directory: packages/android
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+      - run: gradle :adx:testDebugUnitTest :adx:publishReleasePublicationToStagingRepository --console=plain
+      - name: Sign and upload to Maven Central
+        working-directory: .
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+          MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          MAVEN_GPG_PRIVATE_KEY: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+        run: scripts/publish-maven-central.sh

@@ -47,6 +47,9 @@ is checked against the registries, not against intent.
 > straight from this git repository, so both also need the source pushed and a `v1.1.0` tag at the
 > root before their install instructions resolve. Until a package's **Published** cell is green,
 > its install command in the docs will 404 — do not point publishers at it.
+>
+> Publishing is automated: bump a version and push to `main`. [`RELEASING.md`](./RELEASING.md)
+> covers how, and the one-time registry setup each package needs before its first release.
 
 > **Python UI frameworks.** Beyond the server-side client, the Python package ships banner
 > widgets for **Flet**, **Kivy** (with a KivMob-shaped facade for migrations) and **Streamlit** —

@@ -1,0 +1,125 @@
+name: Auto release
+
+# Releases happen by changing a version, nothing else.
+#
+# On every push to main this compares each package's version (scripts/check-versions.mjs)
+# before and after the push. Each package whose version changed gets its release tag
+# (python-v1.2.0, web-v1.2.0, …, or v1.2.0 for iOS + Unity) and release.yml is started on that
+# tag, which tests the package and publishes it. A push that changes no version — docs, CI,
+# code awaiting a version bump — publishes nothing.
+#
+# Run it by hand ("Run workflow", mode = all-untagged) to release every package whose current
+# version has never been tagged, e.g. the first release after the registries are set up.
+#
+# Why it dispatches instead of relying on the tag: a tag pushed with this workflow's own token
+# cannot trigger another workflow (GitHub's rule against recursive runs), so release.yml is
+# started explicitly on the new tag.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/**"
+      - "TheaimartAdx.podspec"
+      - "Package.swift"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "changed = only versions changed by the last push; all-untagged = every package whose current version has no tag yet"
+        type: choice
+        options: [all-untagged, changed]
+        default: all-untagged
+
+permissions:
+  contents: write # push the release tags
+  actions: write  # start release.yml on them
+
+concurrency:
+  group: auto-release
+  cancel-in-progress: false
+
+jobs:
+  tag-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      # Fails the run (and so releases nothing) when any package's version sites disagree.
+      - name: Versions are consistent
+        run: node scripts/check-versions.mjs
+
+      - name: Decide what to release
+        id: plan
+        env:
+          MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'changed' }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          versions() { node "$1/scripts/check-versions.mjs" | sed -n 's/^✓ \([a-z-]*\) *\(.*\)$/\1 \2/p'; }
+
+          versions . > /tmp/now.txt
+          : > /tmp/before.txt
+          if [ "$MODE" = changed ]; then
+            if [ -n "${BEFORE:-}" ] && ! [[ "$BEFORE" =~ ^0+$ ]] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+              git worktree add -q /tmp/before "$BEFORE"
+              versions /tmp/before > /tmp/before.txt || : > /tmp/before.txt
+            else
+              echo "No previous commit to compare with — nothing counts as changed."
+              cp /tmp/now.txt /tmp/before.txt
+            fi
+          fi
+
+          ver()  { awk -v p="$2" '$1==p {print $2}' "$1"; }
+          tags=()
+          for pkg in python node web react-native rust flutter android; do
+            v="$(ver /tmp/now.txt "$pkg")"
+            [ -n "$v" ] || continue
+            tag="$pkg-v$v"
+            if [ "$MODE" = changed ] && [ "$v" = "$(ver /tmp/before.txt "$pkg")" ]; then continue; fi
+            if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+              echo "$tag already exists — skipping"; continue
+            fi
+            tags+=("$tag")
+          done
+
+          # iOS and Unity share the bare v<version> tag; release.yml refuses it unless both agree.
+          ios="$(ver /tmp/now.txt ios)"; unity="$(ver /tmp/now.txt unity)"
+          ios_changed=true
+          if [ "$MODE" = changed ] && [ "$ios" = "$(ver /tmp/before.txt ios)" ] && [ "$unity" = "$(ver /tmp/before.txt unity)" ]; then
+            ios_changed=false
+          fi
+          if [ "$ios_changed" = true ]; then
+            if [ "$ios" != "$unity" ]; then
+              echo "::error::iOS ($ios) and Unity ($unity) share the v<version> tag — bump them together"
+              exit 1
+            elif git rev-parse -q --verify "refs/tags/v$ios" >/dev/null; then
+              echo "v$ios already exists — skipping"
+            else
+              tags+=("v$ios")
+            fi
+          fi
+
+          echo "tags=${tags[*]:-}" >> "$GITHUB_OUTPUT"
+          if [ ${#tags[@]} -eq 0 ]; then
+            echo "Nothing to release."
+          else
+            echo "Releasing: ${tags[*]}"
+          fi
+
+      - name: Tag and start releases
+        if: steps.plan.outputs.tags != ''
+        env:
+          TAGS: ${{ steps.plan.outputs.tags }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for tag in $TAGS; do
+            git tag -a "$tag" -m "Release $tag" "$GITHUB_SHA"
+            git push origin "refs/tags/$tag"
+            gh workflow run release.yml --ref "$tag"
+            echo "- \`$tag\` → release started" >> "$GITHUB_STEP_SUMMARY"
+          done
