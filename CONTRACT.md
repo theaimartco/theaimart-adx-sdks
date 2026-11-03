@@ -257,7 +257,21 @@ therefore:
 - turns `creative.click_url` into a navigable link / opens it **only when its scheme is `http` or
   `https`** — a hostile `javascript:` / `data:` / `file:` / `intent:` URL is dropped (the image
   still renders, just without a link);
-- HTML-escapes every interpolated value when server-rendering markup (`render_html`).
+- HTML-escapes every interpolated value when server-rendering markup (`render_html`);
+- decides every navigation a creative starts inside its own WebView with one rule
+  (`creativeNavigation(url, isMainFrame, userGesture)`; Flutter `adNavigation`):
+
+  | navigation | tapped | result |
+  |---|---|---|
+  | top-level, `http`/`https` | yes | open in the browser, refuse in-WebView (`open_externally`) |
+  | top-level, `http`/`https` | **no** | **block** — a forced redirect |
+  | top-level, any other scheme (`intent:`, `market:`, `tel:`, custom, `about:`…) | either | block |
+  | sub-frame, `http`/`https`/`about:` | either | allow in place |
+  | sub-frame, any other scheme | either | block |
+
+  "Tapped" is the platform's gesture flag where one exists, or a real touch on the creative within
+  2 s (`CREATIVE_GESTURE_WINDOW`). Opening consumes the tap, so one tap opens at most one page. The
+  initial `about:blank` load of the creative's own markup is allowed before the rule runs.
 
 ---
 

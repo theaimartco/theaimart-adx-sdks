@@ -39,17 +39,30 @@ issue for undisclosed vulnerabilities. We aim to acknowledge within 72 hours.
   link). Enforced in `render_html` (server SDKs) and every native click handler.
 - `asset_url` images are loaded **only** over `http`/`https` in native loaders (rejects `file://` /
   `content://` local-resource loads).
-- **Navigation the creative initiates from inside its own frame** is held to the same allowlist —
-  a separate control from the two above, which only cover URLs we are handed in the ad response.
-  Web uses the iframe `sandbox`; React Native sets `originWhitelist` to `http`/`https`; Android
-  attaches a `WebViewClient` that sends an `http`/`https` navigation to the browser and drops
-  everything else. **Android needs that client explicitly:** a WebView with none hands a URL it
-  cannot resolve itself to the OS as an Intent, so `intent://`, `market://` or a custom app scheme
-  in third-party markup would otherwise launch app components on the device. iOS `WKWebView` does
-  not reach external schemes without a navigation delegate, and none is set. Unity has no WebView
-  and refuses html/openrtb fills outright (§9c). Flutter refuses them too unless the application
-  supplies an `htmlBuilder`, and exports the same rule as `adNavigation(url)` for that builder to
-  apply — see below.
+- **Navigation the creative initiates from inside its own frame** is a separate control from the
+  two above, which only cover URLs we are handed in the ad response. One rule decides it on every
+  native platform (`creativeNavigation` / Flutter `adNavigation`, CONTRACT §4e), with three
+  properties:
+  - **nothing leaves the app without a tap** — a top-level navigation with no user gesture behind
+    it is a forced redirect (malvertising that throws the user into a scam page or app store the
+    moment the ad loads) and is blocked. A tap is the platform's gesture flag where one exists
+    (Android `hasGesture()`, iOS `.linkActivated`) or a real touch on the creative within 2 s;
+    one tap opens at most one page;
+  - **the banner itself is never navigated** — a tapped top-level `http`/`https` navigation opens
+    in the browser; every other scheme (`intent:`, `market:`, `tel:`, custom app schemes) is dropped;
+  - a sub-frame inside the creative may load `http`/`https` in place, never another scheme.
+
+  Web uses the iframe `sandbox` (no `allow-top-navigation`; browsers already require activation
+  for popups). Android attaches a `WebViewClient` — a WebView with none hands a URL it cannot
+  resolve to the OS as an Intent. iOS sets a `WKNavigationDelegate` + `WKUIDelegate`; without
+  them a creative could replace the banner with any page and a tapped link loaded inside the
+  banner. **React Native passes `originWhitelist={['*']}` on purpose:** react-native-webview hands
+  every URL that does *not* match the whitelist to `Linking.openURL`, before any handler runs, so
+  an `http`/`https`-only list *launched* `intent://` and custom schemes instead of blocking them;
+  every navigation now goes through `onShouldStartLoadWithRequest`. Unity has no WebView and
+  refuses html/openrtb fills outright (§9c). Flutter refuses them too unless the application
+  supplies an `htmlBuilder`, and exports the rule as `adNavigation(url, isMainFrame:,
+  userGesture:)` for that builder to apply — see below.
 
 ### 3. Injection
 - **Query / WAF:** all free-text params are percent-encoded byte-by-byte, so no value can break out

@@ -26,7 +26,13 @@ export {
 export { VERSION, DEFAULT_BASE_URL, MIN_REFRESH_SECONDS, MAX_RETRY_SECONDS } from './constants.ts';
 export { nextDelaySeconds } from './schedule.ts';
 export { ViewableOutcome, viewableOutcome, VIEWABLE_RETRY_DELAYS_SECONDS } from './viewable.ts';
-export { RenderPlan, renderPlan } from './render.ts';
+export {
+  RenderPlan,
+  renderPlan,
+  CreativeNavigation,
+  creativeNavigation,
+  CREATIVE_GESTURE_WINDOW_MS,
+} from './render.ts';
 export {
   isPublishableKey,
   isSafeImpId,

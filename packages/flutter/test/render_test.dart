@@ -47,22 +47,59 @@ void main() {
     expect(isSafeHttpUrl('  javascript:alert(1)  '), isFalse);
   });
 
-  test('the §4e navigation rule an htmlBuilder must apply', () {
-    expect(adNavigation('https://advertiser.example/landing'),
+  // --- §4e creative navigation (the shared conformance table) ---
+
+  test('a tapped top-level http navigation opens externally', () {
+    expect(
+        adNavigation('https://adv.example/lp',
+            isMainFrame: true, userGesture: true),
         AdNavigation.openExternally);
     expect(
-        adNavigation('http://advertiser.example'), AdNavigation.openExternally);
-    for (final hostile in [
-      'intent://scan/#Intent;scheme=zxing;package=com.evil.app;end',
-      'market://details?id=com.evil.app',
-      'tel:+150055501000',
-      'file:///etc/hosts',
+        adNavigation('  HTTP://adv.example ',
+            isMainFrame: true, userGesture: true),
+        AdNavigation.openExternally);
+  });
+
+  test('an untapped top-level navigation is a forced redirect and is blocked',
+      () {
+    expect(
+        adNavigation('https://scam.example',
+            isMainFrame: true, userGesture: false),
+        AdNavigation.block);
+  });
+
+  test('non-http schemes never leave the creative, even when tapped', () {
+    for (final url in [
+      'intent://x#Intent;end',
+      'market://details?id=x',
+      'tel:123',
+      'sms:1',
       'javascript:alert(1)',
-      'app-scheme://open',
+      'file:///etc/passwd',
+      'data:text/html,x',
+      'myapp://pay',
+      'about:blank',
       null,
     ]) {
-      expect(adNavigation(hostile), AdNavigation.block, reason: '$hostile');
+      for (final gesture in [true, false]) {
+        expect(adNavigation(url, isMainFrame: true, userGesture: gesture),
+            AdNavigation.block,
+            reason: '$url');
+      }
     }
+  });
+
+  test('sub-frames load web content in place but nothing else', () {
+    expect(
+        adNavigation('https://dsp.example/frame',
+            isMainFrame: false, userGesture: false),
+        AdNavigation.allow);
+    expect(adNavigation('about:blank', isMainFrame: false, userGesture: false),
+        AdNavigation.allow);
+    expect(adNavigation('intent://x', isMainFrame: false, userGesture: true),
+        AdNavigation.block);
+    expect(adNavigation('market://x', isMainFrame: false, userGesture: false),
+        AdNavigation.block);
   });
 
   test('an OpenRTB fill renders only where a WebView exists', () {

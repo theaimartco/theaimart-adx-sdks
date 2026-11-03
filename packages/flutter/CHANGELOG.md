@@ -3,7 +3,8 @@
 ## 1.1.0
 
 - **Viewability gated on what drew**, continuous fill (`refreshSeconds`), §12 outbound guard,
-  `adNavigation(url)` for `htmlBuilder` renderers. See the repository `CHANGELOG.md`.
+  `adNavigation(url, isMainFrame:, userGesture:)` for `htmlBuilder` renderers (blocks forced
+  redirects). See the repository `CHANGELOG.md`.
 
 - **Identity:** `BannerAd` now keeps the server's `_an_id` and resends it, so frequency caps
   hold. New `AdxIdentityStore` (default: process-wide memory; pass `identityStore:` to persist).

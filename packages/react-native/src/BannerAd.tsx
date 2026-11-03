@@ -37,7 +37,13 @@ import {
 import { AdxClient } from './client.ts';
 import { VERSION } from './constants.ts';
 import { type Ad, AdSource } from './models.ts';
-import { RenderPlan, renderPlan } from './render.ts';
+import {
+  CREATIVE_GESTURE_WINDOW_MS,
+  CreativeNavigation,
+  RenderPlan,
+  creativeNavigation,
+  renderPlan,
+} from './render.ts';
 import { nextDelaySeconds } from './schedule.ts';
 import { isSafeHttpUrl } from './url.ts';
 
@@ -50,11 +56,24 @@ export function platformUserAgent(): string {
   return `theaimart-adx-reactnative/${VERSION} (${os} ${ver})`;
 }
 
+/** The fields of react-native-webview's `onShouldStartLoadWithRequest` event this SDK reads. */
+interface WebViewNavigationRequest {
+  url: string;
+  /** iOS/macOS only; Android always reports `'other'`. */
+  navigationType?: string;
+  /** False for a navigation inside one of the creative's own iframes. */
+  isTopFrame?: boolean;
+}
+
 // Optional WebView — required lazily so the dependency is only needed for html creatives.
 function getWebView(): React.ComponentType<{
   source: { html: string };
   style?: ViewStyle;
   originWhitelist?: string[];
+  onShouldStartLoadWithRequest?: (request: WebViewNavigationRequest) => boolean;
+  setSupportMultipleWindows?: boolean;
+  javaScriptCanOpenWindowsAutomatically?: boolean;
+  allowFileAccess?: boolean;
 }> | null {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -70,10 +89,13 @@ const VIEWABILITY_MS = 1000;
 const POLL_MS = 250;
 
 /**
- * §4e — a third-party DSP creative may only navigate to http/https. `['*']` would also permit
- * `file:`, `content:` and custom app schemes from inside a semi-trusted creative.
+ * §4e — every navigation must reach `onShouldStartLoadWithRequest`, so the whitelist matches
+ * everything. This is deliberate: react-native-webview hands any URL that does NOT match the
+ * whitelist straight to `Linking.openURL` — no tap needed, and before our handler ever sees it.
+ * A narrower list such as `['http://*', 'https://*']` therefore *launches* `intent://`,
+ * `market://`, `tel:` and custom app schemes from a third-party creative instead of blocking them.
  */
-const HTML_ORIGIN_WHITELIST = ['http://*', 'https://*'];
+const HTML_ORIGIN_WHITELIST = ['*'];
 
 type RenderState = 'pending' | 'ok' | 'failed';
 
@@ -133,6 +155,8 @@ export function BannerAd(props: BannerAdProps): React.ReactElement | null {
 
   const refreshSeconds = props.refreshSeconds ?? 0;
   const webView = useMemo(() => getWebView(), []);
+  /** `Date.now()` of the last touch on the html creative, or 0 — §4e's tap evidence. */
+  const lastCreativeTouch = useRef(0);
 
   const client = useMemo(
     () =>
@@ -351,13 +375,46 @@ export function BannerAd(props: BannerAdProps): React.ReactElement | null {
   };
 
   if (plan === RenderPlan.Html) {
+    const markCreativeTouch = (): void => {
+      lastCreativeTouch.current = Date.now();
+    };
+    const onCreativeNavigation = (request: WebViewNavigationRequest): boolean => {
+      // The creative's own markup loads as `about:blank`; that is our content, not its choice.
+      if (request.url === 'about:blank') return true;
+      const tapped =
+        request.navigationType === 'click' ||
+        (lastCreativeTouch.current !== 0 &&
+          Date.now() - lastCreativeTouch.current <= CREATIVE_GESTURE_WINDOW_MS);
+      switch (creativeNavigation(request.url, request.isTopFrame !== false, tapped)) {
+        case CreativeNavigation.Allow:
+          return true;
+        case CreativeNavigation.OpenExternally:
+          // One tap opens at most one page.
+          lastCreativeTouch.current = 0;
+          void Linking.openURL(request.url.trim()).catch(() => undefined);
+          return false;
+        default:
+          return false;
+      }
+    };
     const WebViewComponent = webView as NonNullable<typeof webView>;
     return (
       <View ref={containerRef as never} collapsable={false} style={[frameStyle, props.style]}>
-        <View style={surfaceStyle}>
+        <View
+          style={surfaceStyle}
+          // Observe only — never claims the responder, so the creative still gets every touch.
+          onTouchStart={markCreativeTouch}
+          onTouchEnd={markCreativeTouch}
+        >
           <WebViewComponent
             source={{ html: c.html as string }}
             originWhitelist={HTML_ORIGIN_WHITELIST}
+            onShouldStartLoadWithRequest={onCreativeNavigation}
+            // `window.open` has nowhere to go: it becomes a navigation of this WebView, which
+            // the handler above then decides like any other.
+            setSupportMultipleWindows={false}
+            javaScriptCanOpenWindowsAutomatically={false}
+            allowFileAccess={false}
             style={{ width: '100%', height: '100%' }}
           />
         </View>

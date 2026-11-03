@@ -95,4 +95,35 @@ class RenderTest {
             assertFalse("must not be navigable: $url", isSafeHttpUrl(url))
         }
     }
+
+    // --- §4e creative navigation (the shared conformance table) ---
+
+    @Test
+    fun aTappedTopLevelHttpNavigationOpensExternally() {
+        assertEquals(CreativeNavigation.OPEN_EXTERNALLY, creativeNavigation("https://adv.example/lp", true, true))
+        assertEquals(CreativeNavigation.OPEN_EXTERNALLY, creativeNavigation("  HTTP://adv.example ", true, true))
+    }
+
+    @Test
+    fun anUntappedTopLevelNavigationIsAForcedRedirectAndIsBlocked() {
+        assertEquals(CreativeNavigation.BLOCK, creativeNavigation("https://scam.example", true, false))
+    }
+
+    @Test
+    fun nonHttpSchemesNeverLeaveTheCreativeEvenWhenTapped() {
+        for (url in listOf("intent://x#Intent;end", "market://details?id=x", "tel:123", "sms:1",
+            "javascript:alert(1)", "file:///etc/passwd", "data:text/html,x", "myapp://pay", "about:blank")) {
+            assertEquals(url, CreativeNavigation.BLOCK, creativeNavigation(url, true, true))
+            assertEquals(url, CreativeNavigation.BLOCK, creativeNavigation(url, true, false))
+        }
+        assertEquals(CreativeNavigation.BLOCK, creativeNavigation(null, true, true))
+    }
+
+    @Test
+    fun subFramesLoadWebContentInPlaceButNothingElse() {
+        assertEquals(CreativeNavigation.ALLOW, creativeNavigation("https://dsp.example/frame", false, false))
+        assertEquals(CreativeNavigation.ALLOW, creativeNavigation("about:blank", false, false))
+        assertEquals(CreativeNavigation.BLOCK, creativeNavigation("intent://x", false, true))
+        assertEquals(CreativeNavigation.BLOCK, creativeNavigation("market://x", false, false))
+    }
 }

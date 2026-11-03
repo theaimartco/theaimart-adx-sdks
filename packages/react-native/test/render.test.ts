@@ -4,7 +4,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RenderPlan, renderPlan } from '../src/render.ts';
+import { CreativeNavigation, RenderPlan, creativeNavigation, renderPlan } from '../src/render.ts';
 import { parseAd } from '../src/models.ts';
 
 const image = (assetUrl: string): unknown => ({
@@ -47,4 +47,49 @@ test('a house ad (no imp_id) still renders but is not trackable', () => {
   });
   assert.equal(renderPlan(house, true), RenderPlan.Image);
   assert.equal(house.isTrackable, false);
+});
+
+// --- §4e creative navigation (the shared conformance table) ---
+
+test('a tapped top-level http navigation opens externally', () => {
+  assert.equal(creativeNavigation('https://adv.example/lp', true, true), CreativeNavigation.OpenExternally);
+  assert.equal(creativeNavigation('  HTTP://adv.example ', true, true), CreativeNavigation.OpenExternally);
+});
+
+test('an untapped top-level navigation is a forced redirect and is blocked', () => {
+  assert.equal(creativeNavigation('https://scam.example', true, false), CreativeNavigation.Block);
+});
+
+test('non-http schemes never leave the creative, even when tapped', () => {
+  for (const url of [
+    'intent://x#Intent;end',
+    'market://details?id=x',
+    'tel:123',
+    'sms:1',
+    'javascript:alert(1)',
+    'file:///etc/passwd',
+    'data:text/html,x',
+    'myapp://pay',
+    'about:blank',
+  ]) {
+    assert.equal(creativeNavigation(url, true, true), CreativeNavigation.Block, url);
+    assert.equal(creativeNavigation(url, true, false), CreativeNavigation.Block, url);
+  }
+  assert.equal(creativeNavigation(null, true, true), CreativeNavigation.Block);
+});
+
+test('sub-frames load web content in place but nothing else', () => {
+  assert.equal(creativeNavigation('https://dsp.example/frame', false, false), CreativeNavigation.Allow);
+  assert.equal(creativeNavigation('about:blank', false, false), CreativeNavigation.Allow);
+  assert.equal(creativeNavigation('intent://x', false, true), CreativeNavigation.Block);
+  assert.equal(creativeNavigation('market://x', false, false), CreativeNavigation.Block);
+});
+
+test('BannerAd routes every creative navigation through the rule, never the library whitelist', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const src = await readFile(new URL('../src/BannerAd.tsx', import.meta.url), 'utf8');
+  // A narrower whitelist makes react-native-webview Linking.openURL() every non-matching URL.
+  assert.match(src, /const HTML_ORIGIN_WHITELIST = \['\*'\];/);
+  assert.match(src, /onShouldStartLoadWithRequest=\{onCreativeNavigation\}/);
+  assert.match(src, /setSupportMultipleWindows=\{false\}/);
 });

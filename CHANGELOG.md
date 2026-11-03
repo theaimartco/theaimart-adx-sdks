@@ -24,6 +24,20 @@ until the release tags are pushed (see README → Releasing).
   consent never truncated, 60/min token bucket + shared 429 breaker, no redirects, 512 KiB bodies.
 - **Android** creative WebView now has a `WebViewClient` (`intent://` in third-party markup could
   launch app components); **Flutter** exports `adNavigation(url)` and a hardened renderer.
+- **No forced redirects** (Android, iOS, React Native, Flutter — CONTRACT §4e): a creative can no
+  longer send the user to the browser or another app without a tap. One shared rule,
+  `creativeNavigation(url, isMainFrame, userGesture)`, with the same conformance table everywhere.
+  Before this a creative that set `location` on load opened the browser on Android, and replaced
+  the banner itself with that page on iOS and React Native.
+- **React Native: non-http schemes were being launched, not blocked.** react-native-webview
+  `Linking.openURL`s every URL outside `originWhitelist`, so the `http`/`https` whitelist sent
+  `intent://`, `market://`, `tel:` and custom schemes from a creative straight to the OS. The
+  whitelist is now `['*']` and every navigation goes through `onShouldStartLoadWithRequest`;
+  `setSupportMultipleWindows={false}`, `allowFileAccess={false}`.
+- **iOS** creative `WKWebView` gets a navigation + UI delegate: tapped links open in Safari instead
+  of loading inside the banner, and `target=_blank` / `window.open` never spawn a web view.
+- **Flutter (breaking, unreleased API):** `adNavigation` now takes required `isMainFrame:` and
+  `userGesture:` and returns `AdNavigation.allow` for sub-frames; the README renderer tracks taps.
 - **Web VAST:** `MediaFile`, `Impression` and `ClickThrough` URLs must be `http`/`https` (a
   `javascript:` media URL used to be assigned to `video.src` unchecked); XML entities decoded; the
   clickthrough opens only after the impression fired; the tag fetch is bounded (10 s, 512 KiB);

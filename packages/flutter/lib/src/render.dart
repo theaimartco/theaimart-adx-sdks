@@ -31,23 +31,51 @@ bool isSafeHttpUrl(String? url) {
 /// whatever the creative navigates to will follow `intent://`, `market://`, `tel:` or a custom
 /// app scheme straight into another app on the device.
 enum AdNavigation {
+  /// Let the WebView load it in place. Only ever a sub-frame inside the creative (an OpenRTB
+  /// tag's own iframe), which never leaves the ad's box.
+  allow,
+
   /// A click-through. Open it *outside* the ad surface — `url_launcher`'s `launchUrl` with
   /// `LaunchMode.externalApplication` — and refuse the in-WebView navigation, so the creative
   /// cannot replace the banner with a page of its own choosing.
   openExternally,
 
-  /// Refuse it and do nothing. No legitimate creative needs any other scheme.
+  /// Refuse it and do nothing.
   block,
 }
+
+/// How long after the user's last tap on the creative a top-level navigation still counts as
+/// theirs. Ad click handlers commonly fire a tracker and redirect a few hundred ms later.
+const Duration creativeGestureWindow = Duration(seconds: 2);
 
 /// Decide what to do with a navigation an html/openrtb creative initiates.
 ///
 /// Call this from the navigation callback of whatever WebView the `htmlBuilder` supplies
-/// (`NavigationDelegate(onNavigationRequest:)` for `webview_flutter`). The creative's own
-/// markup is loaded from a string with no base URL and its sub-resources are not navigations,
-/// so only a top-level navigation the creative starts reaches this decision.
-AdNavigation adNavigation(String? url) =>
-    isSafeHttpUrl(url) ? AdNavigation.openExternally : AdNavigation.block;
+/// (`NavigationDelegate(onNavigationRequest:)` for `webview_flutter`, passing
+/// `request.isMainFrame`).
+///
+/// * **Nothing leaves the app without a tap.** A top-level navigation with no user gesture
+///   behind it ([userGesture] false) is a forced redirect — the creative throwing the user into
+///   a scam page or an app store the moment it loads. It is blocked, not opened. The WebView
+///   does not report gestures, so record the time of the last pointer-up on the creative and pass
+///   whether it was within [creativeGestureWindow].
+/// * **The banner itself is never navigated.** A tapped top-level http/https navigation is a
+///   click-through; any other scheme is dropped.
+/// * A sub-frame may load http/https/about content in place, but never another scheme.
+AdNavigation adNavigation(
+  String? url, {
+  required bool isMainFrame,
+  required bool userGesture,
+}) {
+  if (url == null) return AdNavigation.block;
+  final safe = isSafeHttpUrl(url);
+  if (!isMainFrame) {
+    return safe || url.trim().toLowerCase().startsWith('about:')
+        ? AdNavigation.allow
+        : AdNavigation.block;
+  }
+  return safe && userGesture ? AdNavigation.openExternally : AdNavigation.block;
+}
 
 enum RenderPlan {
   /// Draw `creative.html` in a sandboxed WebView.

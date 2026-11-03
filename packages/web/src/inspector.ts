@@ -21,6 +21,7 @@ export interface InspectorEntry {
   ts: number;
 }
 
+const MAX_LOG_ENTRIES = 50;
 const log: InspectorEntry[] = [];
 let panel: HTMLDivElement | null = null;
 
@@ -28,6 +29,8 @@ let panel: HTMLDivElement | null = null;
 export function inspectorLog(networkOrAd: string | Ad, ad?: Ad): void {
   const network = typeof networkOrAd === 'string' ? networkOrAd : 'taimads';
   const a = typeof networkOrAd === 'string' ? ad : networkOrAd;
+  // Bounded: with continuous fill a long-lived page renders an ad every 30 s forever.
+  if (log.length >= MAX_LOG_ENTRIES) log.shift();
   log.push({
     network,
     impId: a?.impId ?? null,
@@ -106,6 +109,13 @@ function renderPanel(): void {
 /** Show the overlay. Call directly or append `?adx_debug=1` to any page URL. */
 export function enableInspector(): void {
   if (typeof document === 'undefined' || panel) return;
+  // The CDN script is often placed in <head>, where `document.body` does not exist yet. Throwing
+  // here used to abort the whole script before `TaimAds.init` ran — so `?adx_debug=1` on such a
+  // page switched its ads off instead of inspecting them.
+  if (!document.body) {
+    document.addEventListener('DOMContentLoaded', () => enableInspector(), { once: true });
+    return;
+  }
   panel = document.createElement('div');
   panel.setAttribute(
     'style',

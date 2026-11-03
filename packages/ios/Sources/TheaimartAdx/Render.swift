@@ -34,3 +34,36 @@ public func renderPlan(_ ad: Ad?, canRenderHTML: Bool) -> RenderPlan {
     // §4e: a hostile asset URL is dropped, and a dropped creative is not an impression.
     return isSafeHTTPURL(creative.assetURL) ? RenderPlan.image : RenderPlan.none
 }
+
+/// What to do with a navigation an html/openrtb creative starts — CONTRACT.md §4e.
+public enum CreativeNavigation: Equatable {
+    /// Let the WebView load it. Only ever a sub-frame inside the creative.
+    case allow
+    /// A click-through: open it in the browser and refuse the in-WebView navigation.
+    case openExternally
+    /// Refuse it and do nothing.
+    case block
+}
+
+/// How long after the user's last tap on the creative a top-level navigation still counts as
+/// theirs. Ad click handlers commonly fire a tracker and redirect a few hundred ms later.
+public let creativeGestureWindow: TimeInterval = 2.0
+
+/// The §4e navigation rule — identical on every platform that renders html creatives.
+///
+///  * **Nothing leaves the app without a tap.** A top-level navigation with no user gesture
+///    behind it is a forced redirect (the creative throwing the user into a scam page or an app
+///    store the moment it loads). It is blocked, not opened.
+///  * **The banner itself is never navigated.** A tapped top-level http/https navigation is a
+///    click-through and opens outside the ad surface; any other scheme is dropped.
+///  * A sub-frame inside the creative may load http/https/about content in place — that never
+///    leaves the ad's box — but never another scheme.
+public func creativeNavigation(_ url: String?, isMainFrame: Bool, userGesture: Bool) -> CreativeNavigation {
+    guard let url = url else { return .block }
+    let safe = isSafeHTTPURL(url)
+    if !isMainFrame {
+        let lowered = url.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return safe || lowered.hasPrefix("about:") ? .allow : .block
+    }
+    return safe && userGesture ? .openExternally : .block
+}

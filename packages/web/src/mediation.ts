@@ -131,7 +131,16 @@ export class MediationController {
           config = {
             version: typeof body.version === 'number' ? body.version : 1,
             refresh_seconds: clampTtl(body.refresh_seconds),
-            adapters: Array.isArray(body.adapters) ? body.adapters.slice(0, MAX_ADAPTERS) : [],
+            adapters: Array.isArray(body.adapters)
+              ? body.adapters
+                  .filter(
+                    (a): a is MediationEntry =>
+                      !!a && typeof a === 'object' && typeof (a as MediationEntry).network === 'string',
+                  )
+                  .slice(0, MAX_ADAPTERS)
+                  // Adapters register lower-cased; the server may send `AdMob`.
+                  .map((a) => ({ ...a, network: a.network.toLowerCase() }))
+              : [],
           };
         }
       }
@@ -162,7 +171,8 @@ export class MediationController {
 
     const [taimadsResult, ...adapterResults] = await Promise.allSettled([
       this.client.requestAd(options),
-      ...biddingEntries.map((entry) => this.adapters.get(entry.network)!(entry)),
+      // `async` wrapper: an adapter that throws synchronously becomes a rejection, not a crash.
+      ...biddingEntries.map(async (entry) => this.adapters.get(entry.network)!(entry)),
     ]);
 
     const taimads =

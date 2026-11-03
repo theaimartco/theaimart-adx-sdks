@@ -1,5 +1,6 @@
 package co.theaimart.adx
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
@@ -11,8 +12,10 @@ import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.AttributeSet
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -197,6 +200,8 @@ public class BannerAdView @JvmOverloads constructor(
         dueAtMs = if (delay == null) 0L else System.currentTimeMillis() + delay * 1000L
     }
 
+    // The touch listener only observes and always returns false, so it never needs performClick.
+    @SuppressLint("ClickableViewAccessibility")
     private fun renderHtml(html: String) {
         val navigationPolicy = CreativeWebViewClient()
         val webView = WebView(context).apply {
@@ -214,6 +219,12 @@ public class BannerAdView @JvmOverloads constructor(
             settings.setSupportMultipleWindows(false)
             settings.javaScriptCanOpenWindowsAutomatically = false
             webViewClient = navigationPolicy
+            // Observe (never consume) touches, so a navigation can be told apart from a redirect
+            // the creative fires on its own. Returning false leaves scrolling/clicks untouched.
+            setOnTouchListener { _, event ->
+                navigationPolicy.onTouch(event)
+                false
+            }
             isVerticalScrollBarEnabled = false
             isHorizontalScrollBarEnabled = false
             setBackgroundColor(Color.TRANSPARENT)
@@ -288,34 +299,56 @@ public class BannerAdView @JvmOverloads constructor(
      *
      * The creative's own markup is loaded with a `null` base URL and is never routed here, and
      * its sub-resources go through `shouldInterceptRequest` instead — so images, scripts and
-     * pixels inside the ad are unaffected. Only a *top-level navigation the creative initiates*
-     * reaches this point, and there are exactly two outcomes:
+     * pixels inside the ad are unaffected. Only navigations reach this point, and
+     * [creativeNavigation] decides each one:
      *
-     *  * `http`/`https` — a click-through. It opens in the browser via [openUrl] rather than
-     *    inside a banner-sized WebView, which is what the web SDK's
-     *    `allow-popups-to-escape-sandbox` achieves on that platform.
-     *  * anything else — dropped, because no legitimate creative needs it.
+     *  * a tapped top-level `http`/`https` navigation is a click-through. It opens in the browser
+     *    via [openUrl] rather than inside a banner-sized WebView, which is what the web SDK's
+     *    `allow-popups-to-escape-sandbox` achieves on that platform;
+     *  * a top-level navigation with **no tap behind it** is a forced redirect and is dropped —
+     *    without this check a creative could throw the user into a browser the moment it loads;
+     *  * a sub-frame inside the creative may load http/https in place (it never leaves the box).
      *
-     * Both overrides return `true` ("handled"), so the WebView never navigates itself and can
-     * never hand a URL to the system on our behalf. [openUrl] re-checks the scheme, so the
-     * allowlist is enforced here even though this class never inspects it directly.
+     * One tap opens at most one page: the gesture is consumed by the navigation it authorises.
+     * [openUrl] re-checks the scheme, so the allowlist holds even if this rule ever changes.
      */
     private inner class CreativeWebViewClient : WebViewClient() {
+        /** `SystemClock.uptimeMillis()` of the last finger-up on the creative, or 0. */
+        private var lastTouchUpAt = 0L
+
+        fun onTouch(event: MotionEvent) {
+            if (event.actionMasked == MotionEvent.ACTION_UP) lastTouchUpAt = SystemClock.uptimeMillis()
+        }
+
+        private fun recentTouch(): Boolean =
+            lastTouchUpAt != 0L && SystemClock.uptimeMillis() - lastTouchUpAt <= CREATIVE_GESTURE_WINDOW_MS
+
+        private fun decide(url: String?, isMainFrame: Boolean, hasGesture: Boolean): Boolean {
+            return when (creativeNavigation(url, isMainFrame, hasGesture || recentTouch())) {
+                CreativeNavigation.ALLOW -> false
+                CreativeNavigation.OPEN_EXTERNALLY -> {
+                    lastTouchUpAt = 0L
+                    url?.let { openUrl(it) }
+                    true
+                }
+                CreativeNavigation.BLOCK -> true
+            }
+        }
+
         override fun shouldOverrideUrlLoading(
             view: WebView?,
             request: WebResourceRequest?,
         ): Boolean {
-            request?.url?.toString()?.let { openUrl(it) }
-            return true
+            val url = request?.url?.toString() ?: return true
+            return decide(url, request.isForMainFrame, request.hasGesture())
         }
 
         // Deprecated on API 24+, but minSdk is 21 and API 21-23 call *only* this overload —
-        // without it the policy simply would not apply on those devices.
+        // without it the policy simply would not apply on those devices. It carries no frame
+        // or gesture information, so it is treated as top-level and relies on the touch window.
         @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
-        override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
-            url?.let { openUrl(it) }
-            return true
-        }
+        override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean =
+            decide(url, isMainFrame = true, hasGesture = false)
     }
 
     private fun openUrl(url: String) {

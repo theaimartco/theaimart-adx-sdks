@@ -98,3 +98,43 @@ test('mediation refresh_seconds from the server is clamped', async () => {
   await m.getConfig();
   assert.equal(calls, 1, 'refresh_seconds: 0 must not mean refetch every time');
 });
+
+test('mediation matches networks case-insensitively and drops malformed entries', async () => {
+  const { MediationController } = await import('../src/mediation.ts');
+  const fetchImpl = (async () =>
+    new Response(
+      JSON.stringify({
+        version: 1,
+        refresh_seconds: 300,
+        adapters: [null, 7, { placement_id: 'x' }, { network: 'AdMob', placement_id: 'p', priority: 1, ecpm_floor_paise: 0, mode: 'waterfall' }],
+      }),
+      { status: 200 },
+    )) as typeof fetch;
+  const m = new MediationController({ apiKey: 'pk_x', fetchImpl });
+  const config = await m.getConfig();
+  assert.deepEqual(config.adapters.map((a) => a.network), ['admob']);
+});
+
+test('an adapter that throws synchronously cannot reject the mediated request', async () => {
+  const { MediationController } = await import('../src/mediation.ts');
+  const fetchImpl = (async (url: string) =>
+    String(url).includes('mediation-config')
+      ? new Response(
+          JSON.stringify({ adapters: [{ network: 'boom', placement_id: 'p', priority: 1, ecpm_floor_paise: 0, mode: 'bidding' }] }),
+          { status: 200 },
+        )
+      : new Response(JSON.stringify({ fill: false }), { status: 200 })) as unknown as typeof fetch;
+  const m = new MediationController({ apiKey: 'pk_x', fetchImpl });
+  m.registerAdapter('boom', () => {
+    throw new Error('vendor sdk missing');
+  });
+  const g = globalThis as Record<string, unknown>;
+  const prevFetch = g.fetch;
+  g.fetch = fetchImpl;
+  try {
+    const outcome = await m.requestAd({ slotId: '00000000-0000-0000-0000-000000000000' });
+    assert.equal(outcome.winner, null);
+  } finally {
+    g.fetch = prevFetch;
+  }
+});

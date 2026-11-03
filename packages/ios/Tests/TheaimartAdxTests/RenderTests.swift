@@ -65,4 +65,31 @@ final class RenderTests: XCTestCase {
         XCTAssertFalse(isSafeHTTPURL(nil))
         XCTAssertFalse(isSafeHTTPURL(""))
     }
+
+    // MARK: - §4e creative navigation (the shared conformance table)
+
+    func testATappedTopLevelHTTPNavigationOpensExternally() {
+        XCTAssertEqual(creativeNavigation("https://adv.example/lp", isMainFrame: true, userGesture: true), .openExternally)
+        XCTAssertEqual(creativeNavigation("  HTTP://adv.example ", isMainFrame: true, userGesture: true), .openExternally)
+    }
+
+    func testAnUntappedTopLevelNavigationIsAForcedRedirectAndIsBlocked() {
+        XCTAssertEqual(creativeNavigation("https://scam.example", isMainFrame: true, userGesture: false), .block)
+    }
+
+    func testNonHTTPSchemesNeverLeaveTheCreativeEvenWhenTapped() {
+        for url in ["intent://x#Intent;end", "market://details?id=x", "tel:123", "sms:1",
+                    "javascript:alert(1)", "file:///etc/passwd", "data:text/html,x", "myapp://pay", "about:blank"] {
+            XCTAssertEqual(creativeNavigation(url, isMainFrame: true, userGesture: true), .block, url)
+            XCTAssertEqual(creativeNavigation(url, isMainFrame: true, userGesture: false), .block, url)
+        }
+        XCTAssertEqual(creativeNavigation(nil, isMainFrame: true, userGesture: true), .block)
+    }
+
+    func testSubFramesLoadWebContentInPlaceButNothingElse() {
+        XCTAssertEqual(creativeNavigation("https://dsp.example/frame", isMainFrame: false, userGesture: false), .allow)
+        XCTAssertEqual(creativeNavigation("about:blank", isMainFrame: false, userGesture: false), .allow)
+        XCTAssertEqual(creativeNavigation("intent://x", isMainFrame: false, userGesture: true), .block)
+        XCTAssertEqual(creativeNavigation("market://x", isMainFrame: false, userGesture: false), .block)
+    }
 }

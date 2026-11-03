@@ -419,10 +419,15 @@ WebView.
 
 An OpenRTB creative is third-party markup from a DSP. Treat it as hostile. A renderer that simply
 drops `html` into a WebView and follows whatever it navigates to will follow `intent://`,
-`market://`, `tel:` or a custom app scheme straight into another app on the device.
+`market://`, `tel:` or a custom app scheme straight into another app on the device — and a
+creative that sets `location` the moment it loads will throw the user into a browser without
+them ever touching the ad (a forced redirect).
 
-The SDK exports the navigation rule so you do not have to invent one — `adNavigation(url)` is the
-same decision the Web, Android and React Native SDKs apply internally, and it is unit-tested here.
+The SDK exports the navigation rule so you do not have to invent one —
+`adNavigation(url, isMainFrame:, userGesture:)` is the same decision the Android, iOS and React
+Native SDKs apply internally, and it is unit-tested here. `webview_flutter` does not report whether
+a navigation came from a tap, so the renderer below records the last pointer-up on the creative and
+passes whether it was within `creativeGestureWindow`.
 
 Add `webview_flutter` and `url_launcher` to *your* app, then:
 
@@ -454,6 +459,14 @@ class AdHtmlRenderer extends StatefulWidget {
 class _AdHtmlRendererState extends State<AdHtmlRenderer> {
   late final WebViewController _controller;
 
+  /// When the user last lifted a finger off the creative — the only proof of a tap we get.
+  DateTime? _lastTap;
+
+  bool get _recentTap {
+    final tap = _lastTap;
+    return tap != null && DateTime.now().difference(tap) <= creativeGestureWindow;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -469,17 +482,26 @@ class _AdHtmlRendererState extends State<AdHtmlRenderer> {
             // it is our own content, not a navigation the creative chose.
             if (request.url == 'about:blank') return NavigationDecision.navigate;
 
-            switch (adNavigation(request.url)) {
+            switch (adNavigation(
+              request.url,
+              isMainFrame: request.isMainFrame,
+              userGesture: _recentTap,
+            )) {
+              case AdNavigation.allow:
+                // One of the creative's own iframes loading web content inside the ad's box.
+                return NavigationDecision.navigate;
               case AdNavigation.openExternally:
                 // A click-through leaves the ad surface for the browser. The banner itself is
                 // never navigated away from, so the creative cannot replace it with a page of
-                // its own choosing.
+                // its own choosing — and one tap opens at most one page.
+                _lastTap = null;
                 unawaited(launchUrl(
                   Uri.parse(request.url.trim()),
                   mode: LaunchMode.externalApplication,
                 ));
                 return NavigationDecision.prevent;
               case AdNavigation.block:
+                // Another scheme, or a top-level navigation nobody tapped: a forced redirect.
                 return NavigationDecision.prevent;
             }
           },
@@ -493,7 +515,13 @@ class _AdHtmlRendererState extends State<AdHtmlRenderer> {
   Widget build(BuildContext context) => SizedBox(
         width: widget.width.toDouble(),
         height: widget.height.toDouble(),
-        child: WebViewWidget(controller: _controller),
+        // Observe (never consume) pointer-ups, so a scripted redirect that follows a tap still
+        // counts as the user's click while one the creative fires on its own does not.
+        child: Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerUp: (_) => _lastTap = DateTime.now(),
+          child: WebViewWidget(controller: _controller),
+        ),
       );
 }
 ```
@@ -528,9 +556,10 @@ not a silent one — but it means you serve no OpenRTB demand at all until you a
 The renderer above targets `webview_flutter`. If you use a different WebView package or support
 desktop, the package-specific API changes but the rules do not:
 
-* route every navigation the creative starts through `adNavigation(url)`;
+* route every navigation the creative starts through `adNavigation(url, isMainFrame:, userGesture:)`,
+  where `userGesture` is true only within `creativeGestureWindow` of a real tap on the creative;
 * open an `AdNavigation.openExternally` result *outside* the ad surface and prevent the in-WebView
-  navigation;
+  navigation; let `AdNavigation.allow` (sub-frames only) load; prevent `AdNavigation.block`;
 * load the markup with **no base URL**, so the creative gets an opaque origin;
 * expose **no** JavaScript bridge, and leave file/content access off.
 

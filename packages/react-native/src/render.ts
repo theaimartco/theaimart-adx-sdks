@@ -38,3 +38,46 @@ export function renderPlan(ad: Ad | null, canRenderHtml: boolean): RenderPlan {
   if (c.assetUrl && isSafeHttpUrl(c.assetUrl)) return RenderPlan.Image;
   return RenderPlan.None;
 }
+
+/** What to do with a navigation an html/openrtb creative starts — CONTRACT.md §4e. */
+export const CreativeNavigation = {
+  /** Let the WebView load it. Only ever a sub-frame inside the creative. */
+  Allow: 'allow',
+  /** A click-through: open it in the browser and refuse the in-WebView navigation. */
+  OpenExternally: 'open_externally',
+  /** Refuse it and do nothing. */
+  Block: 'block',
+} as const;
+export type CreativeNavigation = (typeof CreativeNavigation)[keyof typeof CreativeNavigation];
+
+/**
+ * How long after the user's last touch on the creative a top-level navigation still counts as
+ * theirs. Ad click handlers commonly fire a tracker and redirect a few hundred ms later.
+ */
+export const CREATIVE_GESTURE_WINDOW_MS = 2000;
+
+/**
+ * The §4e navigation rule — identical on every platform that renders html creatives.
+ *
+ * - **Nothing leaves the app without a tap.** A top-level navigation with no user gesture behind
+ *   it is a forced redirect (the creative throwing the user into a scam page or an app store the
+ *   moment it loads). It is blocked, not opened.
+ * - **The banner itself is never navigated.** A tapped top-level http/https navigation is a
+ *   click-through and opens outside the ad surface; any other scheme is dropped.
+ * - A sub-frame inside the creative may load http/https/about content in place — that never
+ *   leaves the ad's box — but never another scheme.
+ */
+export function creativeNavigation(
+  url: string | null | undefined,
+  isMainFrame: boolean,
+  userGesture: boolean,
+): CreativeNavigation {
+  if (typeof url !== 'string') return CreativeNavigation.Block;
+  const safe = isSafeHttpUrl(url);
+  if (!isMainFrame) {
+    return safe || url.trim().toLowerCase().startsWith('about:')
+      ? CreativeNavigation.Allow
+      : CreativeNavigation.Block;
+  }
+  return safe && userGesture ? CreativeNavigation.OpenExternally : CreativeNavigation.Block;
+}

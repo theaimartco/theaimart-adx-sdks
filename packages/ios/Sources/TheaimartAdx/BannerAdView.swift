@@ -43,6 +43,8 @@ public final class BannerAdView: UIView {
     private var driver: Timer?
     private var clickURL: String?
     private var imageTask: URLSessionDataTask?
+    /// Retained here because `WKWebView.navigationDelegate`/`uiDelegate` are weak.
+    private var navigationPolicy: CreativeNavigationPolicy?
 
     // Continuous fill (§9a/§9b).
     private var failures = 0
@@ -239,7 +241,18 @@ public final class BannerAdView: UIView {
     // MARK: - Drawing
 
     private func renderHTML(_ html: String) {
-        let webView = WKWebView(frame: bounds)
+        let configuration = WKWebViewConfiguration()
+        // `window.open` without a tap is refused by WebKit itself; a tapped one reaches the policy.
+        configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+        let webView = WKWebView(frame: bounds, configuration: configuration)
+        // §4e: without a navigation delegate WebKit lets the creative navigate the banner itself
+        // — to any page, with or without a tap — and a link the user taps loads its landing page
+        // inside a banner-sized view instead of the browser.
+        let policy = CreativeNavigationPolicy()
+        policy.observeTaps(on: webView)
+        webView.navigationDelegate = policy
+        webView.uiDelegate = policy
+        navigationPolicy = policy
         webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         webView.scrollView.isScrollEnabled = false
         webView.isOpaque = false
@@ -325,9 +338,14 @@ public final class BannerAdView: UIView {
 
     private func clearCreativeSubviews() {
         subviews.forEach {
-            if let webView = $0 as? WKWebView { webView.stopLoading() }
+            if let webView = $0 as? WKWebView {
+                webView.stopLoading()
+                webView.navigationDelegate = nil
+                webView.uiDelegate = nil
+            }
             $0.removeFromSuperview()
         }
+        navigationPolicy = nil
     }
 
     private func applySurfaceStyle() {
@@ -434,5 +452,80 @@ public final class BannerAdView: UIView {
     }
 
     private static let maxCreativeBytes = 5 * 1024 * 1024
+}
+
+/// Navigation policy for the creative `WKWebView` — CONTRACT.md §4e, decided by
+/// `creativeNavigation(_:isMainFrame:userGesture:)`:
+///
+///  * a tapped top-level http/https navigation is a click-through and opens in the browser;
+///  * a top-level navigation with no tap behind it is a forced redirect and is cancelled;
+///  * a sub-frame inside the creative may load http/https in place (it never leaves the box);
+///  * the creative never navigates the banner itself, and one tap opens at most one page.
+private final class CreativeNavigationPolicy: NSObject, WKNavigationDelegate, WKUIDelegate,
+    UIGestureRecognizerDelegate {
+    /// When the user last tapped the creative, or nil.
+    private var lastTap: Date?
+
+    /// Observe (never consume) taps, so a scripted `location = …` that follows a tap still
+    /// counts as the user's click, while one the creative fires on its own does not.
+    func observeTaps(on webView: WKWebView) {
+        let tap = UITapGestureRecognizer(target: self, action: #selector(noteTap(_:)))
+        tap.cancelsTouchesInView = false
+        tap.delaysTouchesBegan = false
+        tap.delaysTouchesEnded = false
+        tap.delegate = self
+        webView.addGestureRecognizer(tap)
+    }
+
+    @objc private func noteTap(_ recognizer: UITapGestureRecognizer) {
+        if recognizer.state == .ended { lastTap = Date() }
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                           shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+        true
+    }
+
+    private func decide(_ action: WKNavigationAction) -> CreativeNavigation {
+        let url = action.request.url?.absoluteString
+        // `loadHTMLString(_:baseURL: nil)` arrives as about:blank — our own content, not a choice
+        // the creative made.
+        if url == "about:blank" { return .allow }
+        let tapped = action.navigationType == .linkActivated ||
+            (lastTap.map { Date().timeIntervalSince($0) <= creativeGestureWindow } ?? false)
+        // A nil target frame is a new window: treat it as top-level.
+        let isMainFrame = action.targetFrame?.isMainFrame ?? true
+        return creativeNavigation(url, isMainFrame: isMainFrame, userGesture: tapped)
+    }
+
+    private func openExternally(_ action: WKNavigationAction) {
+        lastTap = nil
+        guard let raw = action.request.url?.absoluteString, isSafeHTTPURL(raw),
+              let url = URL(string: raw.trimmingCharacters(in: .whitespacesAndNewlines)) else { return }
+        UIApplication.shared.open(url, options: [:], completionHandler: nil)
+    }
+
+    func webView(_ webView: WKWebView,
+                 decidePolicyFor navigationAction: WKNavigationAction,
+                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        switch decide(navigationAction) {
+        case .allow:
+            decisionHandler(.allow)
+        case .openExternally:
+            openExternally(navigationAction)
+            decisionHandler(.cancel)
+        case .block:
+            decisionHandler(.cancel)
+        }
+    }
+
+    /// `window.open` / `target=_blank`: never a second web view — a click-through or nothing.
+    func webView(_ webView: WKWebView,
+                 createWebViewWith configuration: WKWebViewConfiguration,
+                 for navigationAction: WKNavigationAction,
+                 windowFeatures: WKWindowFeatures) -> WKWebView? {
+        if decide(navigationAction) == .openExternally { openExternally(navigationAction) }
+        return nil
+    }
 }
 #endif

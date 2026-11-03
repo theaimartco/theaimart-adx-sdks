@@ -6,6 +6,7 @@
 
 import { IFRAME_SANDBOX } from './constants.ts';
 import { AdxWebClient, isSafeHttpUrl } from './core.ts';
+import { inspectorLog } from './inspector.ts';
 import { type Ad, AdSource } from './models.ts';
 import { RenderPlan, renderPlan } from './render.ts';
 import { nextDelaySeconds } from './schedule.ts';
@@ -287,6 +288,7 @@ class Banner implements ActiveBanner {
           if (ad.isTrackable && ad.impId) {
             this.trackViewability(ad.impId, ad.source === AdSource.Internal);
           }
+          inspectorLog(ad);
           this.options.onLoad?.(ad);
         } else {
           this.clearSlot();

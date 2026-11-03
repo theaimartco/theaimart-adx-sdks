@@ -8,7 +8,13 @@ export 'src/banner_ad.dart' show BannerAd, platformUserAgent;
 export 'src/constants.dart'
     show defaultBaseUrl, sdkVersion, minRefreshSeconds, maxRetrySeconds;
 export 'src/render.dart'
-    show RenderPlan, renderPlan, isSafeHttpUrl, AdNavigation, adNavigation;
+    show
+        RenderPlan,
+        renderPlan,
+        isSafeHttpUrl,
+        AdNavigation,
+        adNavigation,
+        creativeGestureWindow;
 export 'src/schedule.dart' show nextDelaySeconds;
 export 'src/guard.dart'
     show

@@ -71,3 +71,35 @@ test('inspector still renders ordinary entries', () => {
     assert.ok(created[0].innerHTML.includes('taimads'));
   });
 });
+
+test('enabling before <body> exists defers instead of throwing (CDN script in <head>)', () => {
+  const g = globalThis as Record<string, unknown>;
+  const previous = g.document;
+  const hadDocument = 'document' in g;
+  let deferred: (() => void) | null = null;
+  const created: FakeEl[] = [];
+  const doc: Record<string, unknown> = {
+    body: null,
+    createElement: (): FakeEl => {
+      const el = new FakeEl();
+      created.push(el);
+      return el;
+    },
+    addEventListener: (type: string, fn: () => void): void => {
+      if (type === 'DOMContentLoaded') deferred = fn;
+    },
+  };
+  g.document = doc;
+  try {
+    assert.doesNotThrow(() => enableInspector());
+    assert.equal(created.length, 0, 'no panel before the body exists');
+    assert.ok(deferred, 'retries on DOMContentLoaded');
+    doc.body = { appendChild: (el: FakeEl): FakeEl => el };
+    (deferred as unknown as () => void)();
+    assert.equal(created.length, 1, 'the panel appears once the body exists');
+  } finally {
+    disableInspector();
+    if (hadDocument) g.document = previous;
+    else delete g.document;
+  }
+});
